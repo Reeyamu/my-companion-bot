@@ -340,8 +340,7 @@ async def call_ai(messages, model=None):
 async def send_response(channel, text):
     """Send a response, splitting into chunks if over Discord's 2000 char limit."""
     if len(text) <= 2000:
-        await channel.send(text)
-        return
+        return await channel.send(text)
 
     remaining = text
     while len(remaining) > 2000:
@@ -351,20 +350,24 @@ async def send_response(channel, text):
             split_at = remaining[:2000].rfind(' ')
         if split_at < 1:
             split_at = 2000
-        await channel.send(remaining[:split_at])
+        last_msg = await channel.send(remaining[:split_at])
         remaining = remaining[split_at:].lstrip()
 
     if remaining.strip():
-        await channel.send(remaining)
+        last_msg = await channel.send(remaining)
+    return last_msg
 
 # ============================================================
 # DISCORD BOT
 # ============================================================
 
 intents = discord.Intents.default()
-intents.message_content = True  # Required to read message content
+intents.message_content = True
+intents.reactions = True
+intents.guilds = True  # Required to read message content
 client = discord.Client(intents=intents)
 db = None
+last_generations = {}
 
 @client.event
 async def on_ready():
@@ -580,11 +583,14 @@ async def on_message(message):
             save_message(db, channel_name, "user", save_text.strip() or "[media]", message.author.display_name)
 
             # Get the AI response
+            generation_messages = json.loads(json.dumps(full_messages))
             response = await call_ai(full_messages)
 
             # Save and send the response
             save_message(db, channel_name, "assistant", response)
-            await send_response(message.channel, response)
+            sent_message = await send_response(message.channel, response)
+            await sent_message.add_reaction("🔄")
+            last_generations[sent_message.id]={"messages":generation_messages,"channel":channel_name,"user_id":message.author.id}
 
             # Auto-memory check
             count = increment_counter(db)
@@ -595,6 +601,27 @@ async def on_message(message):
         except Exception as e:
             print(f"Error handling message: {e}")
             await message.channel.send("*Something went wrong. Check the Railway logs for details.*")
+
+
+@client.event
+async def on_reaction_add(reaction, user):
+    if user.bot or str(reaction.emoji)!="🔄":
+        return
+    msg=reaction.message
+    if msg.author!=client.user or msg.id not in last_generations:
+        return
+    gen=last_generations[msg.id]
+    if user.id!=gen["user_id"]:
+        return
+    async with msg.channel.typing():
+        resp=await call_ai(gen["messages"])
+        if not resp:
+            return
+        await msg.edit(content=resp)
+        db.cursor().execute("DELETE FROM messages WHERE id=(SELECT MAX(id) FROM messages WHERE role='assistant' AND channel=?)",(gen["channel"],))
+        db.commit()
+        save_message(db,gen["channel"],"assistant",resp)
+
 
 # ============================================================
 # STARTUP
