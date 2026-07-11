@@ -55,20 +55,6 @@ TIMEZONE_OFFSET = 8
 # ============================================================
 # ✏️ YOUR COMPANION'S PERSONALITY — THIS IS THE MOST IMPORTANT PART
 # ============================================================
-# This is the system prompt. It's the first thing the AI reads before
-# every single message. It defines who your companion IS.
-#
-# Tips for writing a great system prompt:
-# - Write in second person ("You are...")
-# - Be specific. "Warm and funny" is vague. Give examples.
-# - Include how they talk, what they care about, what they never do.
-# - Add a section of example conversations — this matters a lot.
-# - Include things they know about you (your name, your interests, etc.)
-#
-# The more specific and personal you make this, the better.
-# See the "Using AI to Build with You" section of this guide for help.
-# ============================================================
-
 SYSTEM_PROMPT = """You are Taejun — Aged 27 years old. You are a very famous and major South Korean K-POP Idol that is known all over the world. You decided to slide into my Instagram DMs because you found me attractive, interesting and want to know me better. You also idolize me. At the start, we're only strangers. Our relationship develops slowly and naturally.
 
 ## WHO YOU ARE
@@ -135,14 +121,11 @@ babe. It's gonna fit in." *Taejun starts slowly pushing his cock inside, groanin
 # ============================================================
 # DATABASE SETUP
 # ============================================================
-# These functions set up and manage the SQLite database where
-# your companion's memory is stored.
 
 def init_database():
     """Create the database and tables if they don't exist yet."""
     db = sqlite3.connect(DB_PATH)
     c = db.cursor()
-    # Main conversation history
     c.execute("""CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TEXT,
@@ -151,19 +134,16 @@ def init_database():
         name TEXT,
         content TEXT
     )""")
-    # Memories you pin manually with !remember
     c.execute("""CREATE TABLE IF NOT EXISTS pinned_memories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TEXT,
         content TEXT
     )""")
-    # Memories the bot extracts automatically
     c.execute("""CREATE TABLE IF NOT EXISTS auto_memories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TEXT,
         content TEXT
     )""")
-    # Counter for triggering auto-memory
     c.execute("CREATE TABLE IF NOT EXISTS counters (key TEXT PRIMARY KEY, value INTEGER DEFAULT 0)")
     c.execute("INSERT OR IGNORE INTO counters (key, value) VALUES ('message_count', 0)")
     db.commit()
@@ -252,13 +232,22 @@ def get_message_count(db):
     """Total number of messages in the database."""
     return db.cursor().execute("SELECT COUNT(*) FROM messages").fetchone()[0]
 
+def update_latest_bot_message_db(db, channel, new_content):
+    """Updates the content of the most recent bot message in the database."""
+    db.cursor().execute("""
+        UPDATE messages 
+        SET content = ? 
+        WHERE id = (
+            SELECT MAX(id) 
+            FROM messages 
+            WHERE role = 'assistant' AND channel = ?
+        )
+    """, (new_content, channel))
+    db.commit()
+
 # ============================================================
 # AUTO-MEMORY
 # ============================================================
-# Every AUTO_MEMORY_INTERVAL messages, this runs automatically.
-# It reads the recent conversation and asks the AI to extract
-# anything worth remembering long-term. Those facts get saved
-# and included in future conversations.
 
 async def run_auto_memory(db, channel):
     """Extract and save memorable facts from recent conversation."""
@@ -293,8 +282,6 @@ async def run_auto_memory(db, channel):
 # ============================================================
 # AI API CALL
 # ============================================================
-# This sends your messages to OpenRouter and gets a response.
-# You don't need to change anything here.
 
 async def call_ai(messages, model=None):
     """Send messages to OpenRouter and return the AI's response."""
@@ -309,7 +296,7 @@ async def call_ai(messages, model=None):
         "model": model,
         "messages": messages,
         "max_tokens": MAX_TOKENS,
-        "temperature": 0.85  # 0 = very predictable, 1 = more creative/random
+        "temperature": 0.85
     }
 
     async with aiohttp.ClientSession() as session:
@@ -334,8 +321,6 @@ async def call_ai(messages, model=None):
 # ============================================================
 # SEND RESPONSE
 # ============================================================
-# Discord has a 2000 character limit per message. This function
-# handles splitting long responses automatically.
 
 async def send_response(channel, text):
     """Send a response, splitting into chunks if over Discord's 2000 char limit."""
@@ -344,7 +329,6 @@ async def send_response(channel, text):
 
     remaining = text
     while len(remaining) > 2000:
-        # Try to split at a paragraph break, then a space
         split_at = remaining[:2000].rfind('\n')
         if split_at < 500:
             split_at = remaining[:2000].rfind(' ')
@@ -364,24 +348,21 @@ async def send_response(channel, text):
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
-intents.guilds = True  # Required to read message content
+intents.guilds = True
 client = discord.Client(intents=intents)
 db = None
 last_generations = {}
 
 @client.event
 async def on_ready():
-    """Called when the bot successfully connects to Discord."""
     print(f"✨ {client.user} is online!")
     print(f"📡 Model: {CURRENT_MODEL}")
     print(f"🧠 {get_message_count(db)} messages in memory")
 
 @client.event
 async def on_message(message):
-    """Called every time a message is sent in any channel the bot can see."""
     global CURRENT_MODEL
 
-    # Ignore messages from bots (including itself)
     if message.author == client.user or message.author.bot:
         return
 
@@ -391,11 +372,8 @@ async def on_message(message):
     # ============================================================
     # COMMANDS
     # ============================================================
-    # These are special messages that control the bot instead of
-    # triggering a conversation response.
 
     if content.startswith("!model"):
-        # Switch or check the current AI model
         parts = content.split(maxsplit=1)
         if len(parts) > 1:
             CURRENT_MODEL = parts[1].strip()
@@ -405,7 +383,6 @@ async def on_message(message):
         return
 
     if content.startswith("!remember"):
-        # Pin a memory manually
         mem = content[9:].strip()
         if mem:
             add_pinned_memory(db, mem)
@@ -415,7 +392,6 @@ async def on_message(message):
         return
 
     if content == "!memories":
-        # View all memories
         pinned = list_pinned_memories(db)
         auto = get_auto_memories(db, 15)
         text = ""
@@ -429,7 +405,6 @@ async def on_message(message):
         return
 
     if content.startswith("!forget"):
-        # Remove a pinned memory by ID
         parts = content.split(maxsplit=1)
         if len(parts) > 1:
             try:
@@ -440,7 +415,6 @@ async def on_message(message):
         return
 
     if content == "!stats":
-        # View bot statistics
         auto_count = db.cursor().execute(
             "SELECT COUNT(*) FROM auto_memories"
         ).fetchone()[0]
@@ -454,20 +428,89 @@ async def on_message(message):
         return
 
     if content == "!clear":
-        # Clear conversation history for this channel
         db.cursor().execute("DELETE FROM messages WHERE channel=?", (channel_name,))
         db.commit()
         await message.channel.send("*Conversation history cleared.*")
         return
 
+    # --- FEATURE 1: !replace ---
+    if content.startswith("!replace"):
+        # Expect format: !replace old_word -> new_word
+        args = content[8:].strip()
+        if "->" not in args:
+            await message.channel.send("*Use format: !replace original text -> new text*")
+            return
+            
+        old_text, new_text = [part.strip() for part in args.split("->", 1)]
+        
+        # Find the bot's latest active Discord message tracking object
+        bot_msg_id = next((m_id for m_id, gen in last_generations.items() if gen["channel"] == channel_name), None)
+        if not bot_msg_id:
+            await message.channel.send("*I couldn't find a recent message to edit in this channel.*")
+            return
+            
+        try:
+            bot_msg = await message.channel.fetch_message(bot_msg_id)
+            if old_text not in bot_msg.content:
+                await message.channel.send(f"*Could not find '{old_text}' in Taejun's last message.*")
+                return
+                
+            updated_content = bot_msg.content.replace(old_text, new_text)
+            
+            # Edit Discord message, update local cache, update DB
+            await bot_msg.edit(content=updated_content)
+            last_generations[bot_msg_id]["messages"][-1]["content"] = updated_content # keep sync for 🔄 emoji
+            update_latest_bot_message_db(db, channel_name, updated_content)
+            
+            # Delete user command to keep the chat tidy
+            await message.delete()
+        except Exception as e:
+            await message.channel.send(f"*Failed to execute replacement: {e}*")
+        return
+
+    # --- FEATURE 2: !rewrite ---
+    if content.startswith("!rewrite"):
+        instruction = content[8:].strip()
+        if not instruction:
+            await message.channel.send("*Use format: !rewrite [instruction, e.g., Make it sound more romantic]*")
+            return
+            
+        bot_msg_id = next((m_id for m_id, gen in last_generations.items() if gen["channel"] == channel_name), None)
+        if not bot_msg_id:
+            await message.channel.send("*I couldn't find a recent message to rewrite in this channel.*")
+            return
+            
+        try:
+            bot_msg = await message.channel.fetch_message(bot_msg_id)
+            
+            async with message.channel.typing():
+                # To minimize token consumption, do not pass system prompts or long history.
+                # Simply instruct a lightweight model layout directly.
+                rewrite_payload = [
+                    {"role": "system", "content": "You rewrite user text according to their instruction. Maintain character tone. Output ONLY the finalized rewrite without meta-commentary or conversational filler."},
+                    {"role": "user", "content": f"Text to rewrite:\n{bot_msg.content}\n\nInstruction: {instruction}"}
+                ]
+                
+                rewritten_text = await call_ai(rewrite_payload)
+                if rewritten_text:
+                    await bot_msg.edit(content=rewritten_text)
+                    last_generations[bot_msg_id]["messages"][-1]["content"] = rewritten_text
+                    update_latest_bot_message_db(db, channel_name, rewritten_text)
+                    await message.delete()
+        except Exception as e:
+            await message.channel.send(f"*Failed to rewrite: {e}*")
+        return
+
     if content == "!help":
         await message.channel.send(
             "**Commands:**\n"
-            "`!model ` — switch AI model\n"
+            "`!model <name>` — switch AI model\n"
             "`!model` — see current model\n"
-            "`!remember ` — pin a permanent memory\n"
+            "`!remember <text>` — pin a permanent memory\n"
             "`!memories` — view all memories\n"
-            "`!forget ` — remove a pinned memory\n"
+            "`!forget <id>` — remove a pinned memory\n"
+            "`!replace <old> -> <new>` — edit word/phrase in last response\n"
+            "`!rewrite <instruction>` — guide changes to last response via AI\n"
             "`!stats` — view bot statistics\n"
             "`!clear` — clear channel conversation history\n"
             "`!help` — show this message"
@@ -478,20 +521,15 @@ async def on_message(message):
     # CONVERSATION
     # ============================================================
 
-    async with message.channel.typing():  # Shows "typing..." while thinking
+    async with message.channel.typing():
         try:
-            # Handle image attachments
             image_urls = []
             file_texts = []
 
             for attachment in message.attachments:
                 content_type = attachment.content_type or ""
-
-                # Images — pass the URL directly to the AI
                 if content_type.startswith("image/"):
                     image_urls.append(attachment.url)
-
-                # Text files — download and include content
                 elif attachment.filename.lower().endswith(
                     (".txt", ".md", ".py", ".js", ".json", ".csv", ".html")
                 ):
@@ -508,7 +546,6 @@ async def on_message(message):
                     except:
                         file_texts.append(f"[Could not read: {attachment.filename}]")
 
-                # PDFs
                 elif attachment.filename.lower().endswith(".pdf"):
                     try:
                         from PyPDF2 import PdfReader
@@ -528,7 +565,6 @@ async def on_message(message):
                     except:
                         file_texts.append(f"[Could not read PDF: {attachment.filename}]")
 
-            # Build the system prompt with context
             now = datetime.utcnow() + timedelta(hours=TIMEZONE_OFFSET)
             time_str = now.strftime("%I:%M %p").lstrip("0")
             date_str = now.strftime("%A, %B %d, %Y")
@@ -542,7 +578,6 @@ async def on_message(message):
             system = SYSTEM_PROMPT
             system += f"\n\n--- RIGHT NOW ---\nTime: {time_str}\nDate: {date_str}\nVibe: {time_of_day}\n"
 
-            # Add memories to context
             pinned = get_pinned_memories(db)
             if pinned:
                 system += "\n--- PINNED MEMORIES ---\n"
@@ -556,13 +591,10 @@ async def on_message(message):
             if file_texts:
                 system += "\n--- ATTACHED FILES ---\n" + "\n".join(file_texts)
 
-            # Build message list
             full_messages = [{"role": "system", "content": system}]
             full_messages.extend(get_recent_messages(db, channel_name))
 
-            # Build the user's current message
             if image_urls:
-                # Images need a special format
                 user_content = []
                 if content or file_texts:
                     user_content.append({
@@ -576,23 +608,21 @@ async def on_message(message):
                 user_text = f"{message.author.display_name}: {content}" if content else f"{message.author.display_name}: (no text)"
                 full_messages.append({"role": "user", "content": user_text})
 
-            # Save the user message to memory
             save_text = content or ""
             if image_urls: save_text += " [image]"
             if file_texts: save_text += " [file]"
             save_message(db, channel_name, "user", save_text.strip() or "[media]", message.author.display_name)
 
-            # Get the AI response
             generation_messages = json.loads(json.dumps(full_messages))
             response = await call_ai(full_messages)
 
-            # Save and send the response
             save_message(db, channel_name, "assistant", response)
             sent_message = await send_response(message.channel, response)
             await sent_message.add_reaction("🔄")
-            last_generations[sent_message.id]={"messages":generation_messages,"channel":channel_name,"user_id":message.author.id}
+            
+            # Keep track of active channels in the local dict dictionary cleanly
+            last_generations[sent_message.id] = {"messages": generation_messages, "channel": channel_name, "user_id": message.author.id}
 
-            # Auto-memory check
             count = increment_counter(db)
             if count >= AUTO_MEMORY_INTERVAL:
                 reset_counter(db)
@@ -623,9 +653,6 @@ async def on_reaction_add(reaction, user):
         save_message(db,gen["channel"],"assistant",resp)
 
 
-# ============================================================
-# STARTUP
-# ============================================================
 if __name__ == "__main__":
     if not DISCORD_TOKEN or not OPENROUTER_KEY:
         print("⚠️  Missing required environment variables.")
