@@ -444,7 +444,7 @@ async def on_message(message):
         old_text, new_text = [part.strip() for part in args.split("->", 1)]
         
         # Find the bot's latest active Discord message tracking object
-        bot_msg_id = next((m_id for m_id, gen in last_generations.items() if gen["channel"] == channel_name), None)
+        bot_msg_id = next((m_id for m_id, gen in reversed(list(last_generations.items())) if gen["channel"] == channel_name), None)
         if not bot_msg_id:
             await message.channel.send("*I couldn't find a recent message to edit in this channel.*")
             return
@@ -475,7 +475,7 @@ async def on_message(message):
             await message.channel.send("*Use format: !rewrite [instruction, e.g., Make it sound more romantic]*")
             return
             
-        bot_msg_id = next((m_id for m_id, gen in last_generations.items() if gen["channel"] == channel_name), None)
+        bot_msg_id = next((m_id for m_id, gen in reversed(list(last_generations.items())) if gen["channel"] == channel_name), None)
         if not bot_msg_id:
             await message.channel.send("*I couldn't find a recent message to rewrite in this channel.*")
             return
