@@ -30,7 +30,7 @@ OPENROUTER_KEY = os.getenv("OPENROUTER_KEY", "")
 # ✏️ Change this to whatever model you want to use.
 # You can also switch models anytime with the !model command in Discord.
 # See the Models section of this guide for options.
-CURRENT_MODEL = "sao10k/l3-stheno-8b"
+CURRENT_MODEL = "deepseek/deepseek-v4-flash"
 
 # --- MEMORY SETTINGS ---
 # CONTEXT_WINDOW: How many past messages the bot remembers in each response.
