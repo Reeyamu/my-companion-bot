@@ -382,6 +382,7 @@ async def on_ready():
 @client.event
 async def on_message(message):
     global CURRENT_MODEL
+    global CUSTOM_TEMP  # Kept here safely for reference across handlers
 
     if message.author == client.user or message.author.bot:
         return
@@ -394,9 +395,9 @@ async def on_message(message):
     # ============================================================
 
     if content.startswith("!model"):
+        global CUSTOM_TEMP  # 👈 MOVED TO THE ABSOLUTE ENTRY POINT OF THE !model BLOCK
         parts = content.split(maxsplit=1)
         if len(parts) > 1:
-            global CUSTOM_TEMP
             CURRENT_MODEL = parts[1].strip()
             CUSTOM_TEMP = None  # Clear manual temporary target on model shifts
             
