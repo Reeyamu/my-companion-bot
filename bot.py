@@ -31,6 +31,7 @@ OPENROUTER_KEY = os.getenv("OPENROUTER_KEY", "")
 # You can also switch models anytime with the !model command in Discord.
 # See the Models section of this guide for options.
 CURRENT_MODEL = "deepseek/deepseek-v4-flash"
+CUSTOM_TEMP = None  # Global tracker for temporary user overrides
 
 # --- MEMORY SETTINGS ---
 # CONTEXT_WINDOW: How many past messages the bot remembers in each response.
@@ -297,7 +298,7 @@ async def call_ai(messages, model=None):
     # Dynamic Parameter Handler ("Set and Forget")
     model_lower = model.lower()
     if "dolphin" in model_lower:
-        temperature = 0.85
+        temperature = 1.15  # 🔥 Permanently updated to your 1.15 preference
         top_p = 0.90
     elif "v4-flash" in model_lower:
         temperature = 1.0
@@ -305,6 +306,10 @@ async def call_ai(messages, model=None):
     else:
         temperature = 0.75
         top_p = 0.90
+
+    # Apply manual manual command overwrite if active
+    if CUSTOM_TEMP is not None:
+        temperature = CUSTOM_TEMP
 
     payload = {
         "model": model,
@@ -391,11 +396,12 @@ async def on_message(message):
     if content.startswith("!model"):
         parts = content.split(maxsplit=1)
         if len(parts) > 1:
+            global CUSTOM_TEMP
             CURRENT_MODEL = parts[1].strip()
+            CUSTOM_TEMP = None  # Clear manual temporary target on model shifts
             
-            # Match current metrics for notification transparency
             m_lower = CURRENT_MODEL.lower()
-            temp, tp = (0.85, 0.90) if "dolphin" in m_lower else (1.0, 0.95) if "v4-flash" in m_lower else (0.75, 0.90)
+            temp, tp = (1.15, 0.90) if "dolphin" in m_lower else (1.0, 0.95) if "v4-flash" in m_lower else (0.75, 0.90)
             
             await message.channel.send(
                 f"*Switched to **{CURRENT_MODEL}***\n"
@@ -403,8 +409,28 @@ async def on_message(message):
             )
         else:
             m_lower = CURRENT_MODEL.lower()
-            temp, tp = (0.85, 0.90) if "dolphin" in m_lower else (1.0, 0.95) if "v4-flash" in m_lower else (0.75, 0.90)
+            temp = CUSTOM_TEMP if CUSTOM_TEMP is not None else ((1.15 if "dolphin" in m_lower else 1.0 if "v4-flash" in m_lower else 0.75))
+            tp = 0.90 if "dolphin" in m_lower else 0.95 if "v4-flash" in m_lower else 0.90
             await message.channel.send(f"*Currently using **{CURRENT_MODEL}** (Temp: {temp} | Top_P: {tp})*")
+        return
+
+    if content.startswith("!temp"):
+        global CUSTOM_TEMP
+        parts = content.split(maxsplit=1)
+        if len(parts) > 1:
+            try:
+                new_temp = float(parts[1].strip())
+                if 0.0 <= new_temp <= 2.0:
+                    CUSTOM_TEMP = new_temp
+                    await message.channel.send(f"*Manual temperature set to **{CUSTOM_TEMP}***")
+                else:
+                    await message.channel.send("*Please provide a number between 0.0 and 2.0*")
+            except ValueError:
+                await message.channel.send("*Use format: !temp 1.2*")
+        else:
+            m_lower = CURRENT_MODEL.lower()
+            current_active_temp = CUSTOM_TEMP if CUSTOM_TEMP is not None else ((1.15 if "dolphin" in m_lower else 1.0 if "v4-flash" in m_lower else 0.75))
+            await message.channel.send(f"*Current temperature is **{current_active_temp}***")
         return
 
     if content.startswith("!remember"):
@@ -460,7 +486,6 @@ async def on_message(message):
 
     # --- FEATURE 1: !replace ---
     if content.startswith("!replace"):
-        # Expect format: !replace old_word -> new_word
         args = content[8:].strip()
         if "->" not in args:
             await message.channel.send("*Use format: !replace original text -> new text*")
@@ -468,7 +493,6 @@ async def on_message(message):
             
         old_text, new_text = [part.strip() for part in args.split("->", 1)]
         
-        # Find the bot's latest active Discord message tracking object
         bot_msg_id = next((m_id for m_id, gen in reversed(list(last_generations.items())) if gen["channel"] == channel_name), None)
         if not bot_msg_id:
             await message.channel.send("*I couldn't find a recent message to edit in this channel.*")
@@ -482,12 +506,9 @@ async def on_message(message):
                 
             updated_content = bot_msg.content.replace(old_text, new_text)
             
-            # Edit Discord message, update local cache, update DB
             await bot_msg.edit(content=updated_content)
-            last_generations[bot_msg_id]["messages"][-1]["content"] = updated_content # keep sync for 🔄 emoji
+            last_generations[bot_msg_id]["messages"][-1]["content"] = updated_content
             update_latest_bot_message_db(db, channel_name, updated_content)
-            
-            # Delete user command to keep the chat tidy
             await message.delete()
         except Exception as e:
             await message.channel.send(f"*Failed to execute replacement: {e}*")
@@ -509,8 +530,6 @@ async def on_message(message):
             bot_msg = await message.channel.fetch_message(bot_msg_id)
             
             async with message.channel.typing():
-                # To minimize token consumption, do not pass system prompts or long history.
-                # Simply instruct a lightweight model layout directly.
                 rewrite_payload = [
                     {"role": "system", "content": "You rewrite user text according to their instruction. Maintain character tone. Output ONLY the finalized rewrite without meta-commentary or conversational filler."},
                     {"role": "user", "content": f"Text to rewrite:\n{bot_msg.content}\n\nInstruction: {instruction}"}
@@ -531,6 +550,7 @@ async def on_message(message):
             "**Commands:**\n"
             "`!model <name>` — switch AI model\n"
             "`!model` — see current model\n"
+            "`!temp <number>` — manually override active temperature\n"
             "`!remember <text>` — pin a permanent memory\n"
             "`!memories` — view all memories\n"
             "`!forget <id>` — remove a pinned memory\n"
@@ -645,7 +665,6 @@ async def on_message(message):
             sent_message = await send_response(message.channel, response)
             await sent_message.add_reaction("🔄")
             
-            # Keep track of active channels in the local dict dictionary cleanly
             last_generations[sent_message.id] = {"messages": generation_messages, "channel": channel_name, "user_id": message.author.id}
 
             count = increment_counter(db)
