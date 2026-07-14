@@ -293,11 +293,25 @@ async def call_ai(messages, model=None):
         "HTTP-Referer": "https://discord.com",
         "X-Title": "Companion Bot"
     }
+
+    # Dynamic Parameter Handler ("Set and Forget")
+    model_lower = model.lower()
+    if "dolphin" in model_lower:
+        temperature = 0.85
+        top_p = 0.90
+    elif "v4-flash" in model_lower:
+        temperature = 1.0
+        top_p = 0.95
+    else:
+        temperature = 0.75
+        top_p = 0.90
+
     payload = {
         "model": model,
         "messages": messages,
         "max_tokens": MAX_TOKENS,
-        "temperature": 0.85
+        "temperature": temperature,
+        "top_p": top_p
     }
 
     async with aiohttp.ClientSession() as session:
@@ -378,9 +392,19 @@ async def on_message(message):
         parts = content.split(maxsplit=1)
         if len(parts) > 1:
             CURRENT_MODEL = parts[1].strip()
-            await message.channel.send(f"*Switched to **{CURRENT_MODEL}***")
+            
+            # Match current metrics for notification transparency
+            m_lower = CURRENT_MODEL.lower()
+            temp, tp = (0.85, 0.90) if "dolphin" in m_lower else (1.0, 0.95) if "v4-flash" in m_lower else (0.75, 0.90)
+            
+            await message.channel.send(
+                f"*Switched to **{CURRENT_MODEL}***\n"
+                f"> `Profile applied — Temp: {temp} | Top_P: {tp}`"
+            )
         else:
-            await message.channel.send(f"*Currently using **{CURRENT_MODEL}***")
+            m_lower = CURRENT_MODEL.lower()
+            temp, tp = (0.85, 0.90) if "dolphin" in m_lower else (1.0, 0.95) if "v4-flash" in m_lower else (0.75, 0.90)
+            await message.channel.send(f"*Currently using **{CURRENT_MODEL}** (Temp: {temp} | Top_P: {tp})*")
         return
 
     if content.startswith("!remember"):
