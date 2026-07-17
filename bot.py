@@ -5,7 +5,7 @@ import json
 import os
 import io
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # ============================================================
 # YOUR COMPANION BOT — BASE VERSION
@@ -29,7 +29,10 @@ OPENROUTER_KEY = os.getenv("OPENROUTER_KEY", "")
 # --- MODEL ---
 # ✏️ Change this to whatever model you want to use.
 # You can also switch models anytime with the !model command in Discord.
-# See the Models section of this guide for options.
+# Options include:
+# - deepseek/deepseek-v4-flash
+# - cognitivecomputations/dolphin-mistral-24b-venice-edition
+# - thedrummer/cydonia-24b-v4.1
 CURRENT_MODEL = "deepseek/deepseek-v4-flash"
 CUSTOM_TEMP = None  # Global tracker for temporary user overrides
 
@@ -298,7 +301,10 @@ async def call_ai(messages, model=None):
     # Dynamic Parameter Handler ("Set and Forget")
     model_lower = model.lower()
     if "dolphin" in model_lower:
-        temperature = 1.15  # 🔥 Permanently updated to your 1.15 preference
+        temperature = 1.15
+        top_p = 0.90
+    elif "cydonia" in model_lower:
+        temperature = 0.75
         top_p = 0.90
     elif "v4-flash" in model_lower:
         temperature = 1.0
@@ -307,7 +313,7 @@ async def call_ai(messages, model=None):
         temperature = 0.75
         top_p = 0.90
 
-    # Apply manual manual command overwrite if active
+    # Apply manual command overwrite if active
     if CUSTOM_TEMP is not None:
         temperature = CUSTOM_TEMP
 
@@ -381,7 +387,7 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    # 📑 MASTER GLOBALS LOCATED HERE AT ENTRY POINT — Removed from interior commands
+    # 📑 MASTER GLOBALS LOCATED HERE AT ENTRY POINT
     global CURRENT_MODEL
     global CUSTOM_TEMP
 
@@ -402,7 +408,7 @@ async def on_message(message):
             CUSTOM_TEMP = None  # Clear manual temporary target on model shifts
             
             m_lower = CURRENT_MODEL.lower()
-            temp, tp = (1.15, 0.90) if "dolphin" in m_lower else (1.0, 0.95) if "v4-flash" in m_lower else (0.75, 0.90)
+            temp, tp = (1.15, 0.90) if "dolphin" in m_lower else (0.75, 0.90) if "cydonia" in m_lower else (1.0, 0.95) if "v4-flash" in m_lower else (0.75, 0.90)
             
             await message.channel.send(
                 f"*Switched to **{CURRENT_MODEL}***\n"
@@ -410,8 +416,8 @@ async def on_message(message):
             )
         else:
             m_lower = CURRENT_MODEL.lower()
-            temp = CUSTOM_TEMP if CUSTOM_TEMP is not None else ((1.15 if "dolphin" in m_lower else 1.0 if "v4-flash" in m_lower else 0.75))
-            tp = 0.90 if "dolphin" in m_lower else 0.95 if "v4-flash" in m_lower else 0.90
+            temp = CUSTOM_TEMP if CUSTOM_TEMP is not None else ((1.15 if "dolphin" in m_lower else 0.75 if "cydonia" in m_lower else 1.0 if "v4-flash" in m_lower else 0.75))
+            tp = 0.90 if "dolphin" in m_lower or "cydonia" in m_lower else 0.95 if "v4-flash" in m_lower else 0.90
             await message.channel.send(f"*Currently using **{CURRENT_MODEL}** (Temp: {temp} | Top_P: {tp})*")
         return
 
@@ -429,7 +435,7 @@ async def on_message(message):
                 await message.channel.send("*Use format: !temp 1.2*")
         else:
             m_lower = CURRENT_MODEL.lower()
-            current_active_temp = CUSTOM_TEMP if CUSTOM_TEMP is not None else ((1.15 if "dolphin" in m_lower else 1.0 if "v4-flash" in m_lower else 0.75))
+            current_active_temp = CUSTOM_TEMP if CUSTOM_TEMP is not None else ((1.15 if "dolphin" in m_lower else 0.75 if "cydonia" in m_lower else 1.0 if "v4-flash" in m_lower else 0.75))
             await message.channel.send(f"*Current temperature is **{current_active_temp}***")
         return
 
@@ -610,7 +616,7 @@ async def on_message(message):
                     except:
                         file_texts.append(f"[Could not read PDF: {attachment.filename}]")
 
-            now = datetime.utcnow() + timedelta(hours=TIMEZONE_OFFSET)
+            now = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=TIMEZONE_OFFSET)
             time_str = now.strftime("%I:%M %p").lstrip("0")
             date_str = now.strftime("%A, %B %d, %Y")
             hour = now.hour
