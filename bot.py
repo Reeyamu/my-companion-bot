@@ -41,7 +41,7 @@ CUSTOM_TEMP = None  # Global tracker for temporary user overrides
 # 50 is a good balance. Higher = smarter context, higher cost.
 CONTEXT_WINDOW = 25
 # MAX_TOKENS: Maximum length of each response. 2000 is plenty for most chats.
-MAX_TOKENS = 2000
+MAX_TOKENS = 1200
 # AUTO_MEMORY_INTERVAL: After this many messages, the bot extracts key facts
 # and saves them as permanent memories automatically.
 AUTO_MEMORY_INTERVAL = 10
