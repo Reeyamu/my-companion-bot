@@ -27,13 +27,8 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY", "")
 
 # --- MODEL ---
-# ✏️ Change this to whatever model you want to use.
-# You can also switch models anytime with the !model command in Discord.
-# Options include:
-# - deepseek/deepseek-v4-flash
-# - cognitivecomputations/dolphin-mistral-24b-venice-edition
-# - thedrummer/cydonia-24b-v4.1
-CURRENT_MODEL = "deepseek/deepseek-v4-flash"
+# ✏️ Default model set to DeepSeek v3.2
+CURRENT_MODEL = "deepseek/deepseek-v3.2"
 CUSTOM_TEMP = None  # Global tracker for temporary user overrides
 
 # --- MEMORY SETTINGS ---
@@ -297,20 +292,9 @@ async def call_ai(messages, model=None):
         "X-Title": "Companion Bot"
     }
 
-    # Dynamic Parameter Handler ("Set and Forget")
-    model_lower = model.lower()
-    if "dolphin" in model_lower:
-        temperature = 1.15
-        top_p = 0.90
-    elif "cydonia" in model_lower:
-        temperature = 0.75
-        top_p = 0.90
-    elif "v4-flash" in model_lower:
-        temperature = 1.0
-        top_p = 0.95
-    else:
-        temperature = 0.75
-        top_p = 0.90
+    # Set default parameters for DeepSeek v3.2 (Temp: 1.15, Top_P: 0.95)
+    temperature = 1.15
+    top_p = 0.95
 
     # Apply manual command overwrite if active
     if CUSTOM_TEMP is not None:
@@ -386,7 +370,6 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    # 📑 MASTER GLOBALS LOCATED HERE AT ENTRY POINT
     global CURRENT_MODEL
     global CUSTOM_TEMP
 
@@ -406,17 +389,15 @@ async def on_message(message):
             CURRENT_MODEL = parts[1].strip()
             CUSTOM_TEMP = None  # Clear manual temporary target on model shifts
             
-            m_lower = CURRENT_MODEL.lower()
-            temp, tp = (1.15, 0.90) if "dolphin" in m_lower else (0.75, 0.90) if "cydonia" in m_lower else (1.0, 0.95) if "v4-flash" in m_lower else (0.75, 0.90)
+            temp, tp = (1.15, 0.95)
             
             await message.channel.send(
                 f"*Switched to **{CURRENT_MODEL}***\n"
                 f"> `Profile applied — Temp: {temp} | Top_P: {tp}`"
             )
         else:
-            m_lower = CURRENT_MODEL.lower()
-            temp = CUSTOM_TEMP if CUSTOM_TEMP is not None else ((1.15 if "dolphin" in m_lower else 0.75 if "cydonia" in m_lower else 1.0 if "v4-flash" in m_lower else 0.75))
-            tp = 0.90 if "dolphin" in m_lower or "cydonia" in m_lower else 0.95 if "v4-flash" in m_lower else 0.90
+            temp = CUSTOM_TEMP if CUSTOM_TEMP is not None else 1.15
+            tp = 0.95
             await message.channel.send(f"*Currently using **{CURRENT_MODEL}** (Temp: {temp} | Top_P: {tp})*")
         return
 
@@ -433,8 +414,7 @@ async def on_message(message):
             except ValueError:
                 await message.channel.send("*Use format: !temp 1.2*")
         else:
-            m_lower = CURRENT_MODEL.lower()
-            current_active_temp = CUSTOM_TEMP if CUSTOM_TEMP is not None else ((1.15 if "dolphin" in m_lower else 0.75 if "cydonia" in m_lower else 1.0 if "v4-flash" in m_lower else 0.75))
+            current_active_temp = CUSTOM_TEMP if CUSTOM_TEMP is not None else 1.15
             await message.channel.send(f"*Current temperature is **{current_active_temp}***")
         return
 
